@@ -1,3 +1,6 @@
+⚠️ DO NOT FORK THIS REPOSITORY! ⚠️ \
+⚠️ DO NOT OPEN A PULL REQUEST! ⚠️
+
 # MCA DevOps test
 
 We have a classic N-tier application:
