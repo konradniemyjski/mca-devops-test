@@ -1,0 +1,78 @@
+stages:
+  - build
+  - scan
+  - package
+  - deploy
+
+variables:
+  REGISTRY_IMAGE_BACKEND: $CI_REGISTRY_IMAGE/mca-backend
+  REGISTRY_IMAGE_FRONTEND: $CI_REGISTRY_IMAGE/mca-frontend
+  IMAGE_TAG: $CI_COMMIT_SHORT_SHA
+
+before_script:
+  - echo "Running in $CI_PROJECT_DIR"
+
+build-backend:
+  stage: build
+  image: docker:24.0.7
+  services:
+    - docker:24.0.7-dind
+  script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+    - docker build -t $REGISTRY_IMAGE_BACKEND:$IMAGE_TAG backend/
+    - docker push $REGISTRY_IMAGE_BACKEND:$IMAGE_TAG
+  only:
+    - main
+    - merge_requests
+
+build-frontend:
+  stage: build
+  image: docker:24.0.7
+  services:
+    - docker:24.0.7-dind
+  script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+    - docker build -t $REGISTRY_IMAGE_FRONTEND:$IMAGE_TAG frontend/
+    - docker push $REGISTRY_IMAGE_FRONTEND:$IMAGE_TAG
+  only:
+    - main
+    - merge_requests
+
+scan-images:
+  stage: scan
+  image:
+    name: aquasec/trivy:0.51.1
+    entrypoint: [""]
+  script:
+    - trivy image $REGISTRY_IMAGE_BACKEND:$IMAGE_TAG
+    - trivy image $REGISTRY_IMAGE_FRONTEND:$IMAGE_TAG
+  only:
+    - main
+    - merge_requests
+
+helm-package:
+  stage: package
+  image: alpine/helm:3.14.2
+  script:
+    - helm lint ./mca-devops-app
+    - helm package ./mca-devops-app --destination ./mca-devops-app/packages
+    - ls -l ./mca-devops-app/packages
+  only:
+    - main
+    - merge_requests
+  artifacts:
+    paths:
+      - ./mca-devops-app/packages/*.tgz
+
+deploy-dev:
+  stage: deploy
+  image: alpine/kubectl:1.30.2
+  script:
+    - echo "$KUBECONFIG_DATA" | base64 -d > /tmp/kubeconfig
+    - export KUBECONFIG=/tmp/kubeconfig
+    - helm upgrade --install mca-devops-test ./mca-devops-app/packages/*.tgz --namespace default --set image.backend.tag=$IMAGE_TAG --set image.frontend.tag=$IMAGE_TAG
+  only:
+    - main
+  environment:
+    name: development
+    url: http://mca.local

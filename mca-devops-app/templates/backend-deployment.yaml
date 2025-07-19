@@ -1,0 +1,59 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "mca-devops-app.fullname" . }}-backend
+  labels:
+    {{- include "mca-devops-app.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backend
+spec:
+  replicas: {{ .Values.backend.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "mca-devops-app.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: backend
+  template:
+    metadata:
+      labels:
+        {{- include "mca-devops-app.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: backend
+    spec:
+      containers:
+        - name: backend
+          image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"
+          imagePullPolicy: {{ .Values.backend.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: "prod"
+            - name: SPRING_POSTGRES_URL
+              {{- if .Values.database.external.enabled }}
+              value: "jdbc:postgresql://{{ .Values.database.external.host }}:{{ .Values.database.external.port }}/{{ .Values.database.external.database }}"
+              {{- else }}
+              value: "jdbc:postgresql://{{ include "mca-devops-app.fullname" . }}-postgresql:5432/{{ .Values.postgresql.auth.database }}"
+              {{- end }}
+            - name: SPRING_POSTGRES_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "mca-devops-app.fullname" . }}-db-secret
+                  key: username
+            - name: SPRING_POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "mca-devops-app.fullname" . }}-db-secret
+                  key: password
+          resources:
+            {{- toYaml .Values.backend.resources | nindent 12 }}
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1001
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+          volumeMounts:
+            - mountPath: /tmp
+              name: tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
